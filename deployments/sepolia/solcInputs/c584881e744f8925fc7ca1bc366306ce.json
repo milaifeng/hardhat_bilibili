@@ -1,0 +1,39 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n// solhint-disable-next-line interface-starts-with-i\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n//众筹合约\nimport {AggregatorV3Interface} from \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\ncontract FundMe {\n    mapping(address => uint256) public fundersToAmount;\n    uint256 constant MINIMUM_VALUE = 1 * 10 ** 18; //USD\n\n    AggregatorV3Interface public dataFeed;\n\n    uint256 constant TARGET = 2 * 10 ** 18; // 2USD\n\n    address public owner;\n    address public erc20Addr;\n\n    bool public getFundSuccess;\n\n    // 开始时间（秒）\n    uint256 startTime;\n    //锁定时长\n    uint256 lockTime;\n\n    constructor(uint256 _lockTime, address _dataFeeedAddr) {\n        // sepolia testnet\n        dataFeed = AggregatorV3Interface(_dataFeeedAddr);\n        owner = msg.sender;\n        startTime = block.timestamp;\n        lockTime = _lockTime; //30mins+5sec\n    }\n\n    function fund() external payable {\n        require(convertEthToUsd(msg.value) >= MINIMUM_VALUE, \"Send more ETH\");\n        require(\n            block.timestamp < startTime + lockTime,\n            \"Cannot fund during locking period\"\n        );\n        fundersToAmount[msg.sender] = msg.value;\n    }\n\n    //获取预言机的Eth价格\n    function getChainlinkDataFeedLatestAnswer() public view returns (int) {\n        // prettier-ignore\n        (\n            /* uint80 roundID */,\n            int answer,\n            /*uint startedAt*/,\n            /*uint timeStamp*/,\n            /*uint80 answeredInRound*/\n        ) = dataFeed.latestRoundData();\n        return answer;\n    }\n\n    //Eth 转换成 USD\n    function convertEthToUsd(\n        uint256 ETHAmount\n    ) internal view returns (uint256) {\n        uint256 ethPrice = uint256(getChainlinkDataFeedLatestAnswer());\n        return (ETHAmount * ethPrice) / (10 ** 8);\n    }\n\n    //如果达到了目标值则可以提款\n    function getFund() external windowClose Onlyowner {\n        require(\n            convertEthToUsd(address(this).balance) >= TARGET,\n            \"Target is not reached\"\n        );\n        fundersToAmount[msg.sender] = 0;\n        payable(msg.sender).transfer(address(this).balance);\n        getFundSuccess = true;\n    }\n\n    //如果没有达到目标值则退款\n    function refund() external windowClose {\n        require(\n            convertEthToUsd(address(this).balance) < TARGET,\n            \"Target is  reached\"\n        );\n        require(fundersToAmount[msg.sender] != 0, \"there is not fund for you\");\n\n        fundersToAmount[msg.sender] = 0;\n        (bool success, ) = payable(msg.sender).call{\n            value: fundersToAmount[msg.sender]\n        }(\"\");\n        require(success, \"transfer tx failed\");\n    }\n\n    function setFunderToAmount(address funder, uint256 value) external {\n        require(msg.sender == erc20Addr, \"Call from other contract\");\n        fundersToAmount[funder] = value;\n    }\n\n    function setErc20Addr(address _erc20Addr) public Onlyowner {\n        erc20Addr = _erc20Addr;\n    }\n\n    function transferOwnership(address newOwner) public Onlyowner {\n        owner = newOwner;\n    }\n\n    modifier windowClose() {\n        require(\n            block.timestamp >= startTime + lockTime,\n            \"Window is not closed\"\n        );\n        _;\n    }\n    modifier Onlyowner() {\n        require(msg.sender == owner, \"Only the current Owner can do this!\");\n        _;\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "evmVersion": "paris",
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
